@@ -8,7 +8,7 @@ using namespace std;
 
 void Game::notifyMinionSpawned(Minion* m) {
    MinionSpawn ms(m);
-   sendPacket(currentPeer, reinterpret_cast<uint8*>(&ms),sizeof(ms), CHL_S2C);
+   sendPacket(currentPeer, ms, CHL_S2C);
    notifySetHealth(m);
 }
 
