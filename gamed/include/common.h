@@ -51,11 +51,12 @@ enum PacketCmd : uint8
 
    PKT_S2C_GameTimer = 0xC0,
    PKT_S2C_GameTimerUpdate = 0xC1,
-
+   
    PKT_C2S_StartGame = 0x52,    // 4.12
    PKT_S2C_SynchVersion = 0x54, // 4.12
    PKT_C2S_ScoreBord = 0x56,
    PKT_C2S_AttentionPing = 0x57,
+   PKT_S2C_SpellSet = 0x5A,		// 4.12
    PKT_S2C_StartGame = 0x5C,    // 4.12
 
    PKT_S2C_StartSpawn = 0x62,
@@ -77,6 +78,7 @@ enum PacketCmd : uint8
 
    PKT_World_SendGameNumber = 0x92,
    PKT_S2C_Ping_Load_Info = 0x95, // 4.12
+   PKT_S2C_UpdateModel = 0x97,		// 4.12
    PKT_C2S_CastSpell = 0x9A,      // 4.12
    PKT_S2C_TurretSpawn = 0x9D,    // 4.12
 
