@@ -58,11 +58,8 @@ bool Game::handleKeyCheck(ENetPeer *peer, ENetPacket *packet) {
 }
 
 bool Game::handleGameNumber(ENetPeer *peer, ENetPacket *packet) {
-    WorldSendGameNumber world;
-    world.gameId = 1;
-    strcpy((char *)world.data1, "EUW1");
-    memcpy(world.data, peerInfo(peer)->getName().c_str(), peerInfo(peer)->getName().length());
-    return sendPacket(peer, reinterpret_cast<uint8 *>(&world), sizeof(WorldSendGameNumber), CHL_S2C);
+    WorldSendGameNumber world(1, "EUW1", peerInfo(peer)->getName());
+    return sendPacket(peer, world, CHL_S2C);
 }
 
 bool Game::handleSynch(ENetPeer *peer, ENetPacket *packet) {
@@ -95,20 +92,18 @@ bool Game::handleMap(ENetPeer *peer, ENetPacket *packet) {
 //building the map
 bool Game::handleSpawn(ENetPeer *peer, ENetPacket *packet) {
     StatePacket2 start(PKT_S2C_StartSpawn);
-    bool p1 = sendPacket(peer, reinterpret_cast<uint8 *>(&start), sizeof(StatePacket2), CHL_S2C);
+    bool p1 = sendPacket(peer, start, CHL_S2C);
     printf("Spawning map\r\n");
     
     HeroSpawn spawn(peerInfo(peer)->getChampion()->getNetId(), 0, peerInfo(peer)->getName(), peerInfo(peer)->getChampion()->getType(), peerInfo(peer)->getSkinNo());
     bool p2 = sendPacket(peer, spawn, CHL_S2C);
     
     PlayerInfo info(peerInfo(peer)->getChampion()->getNetId(), SPL_Ignite, SPL_Flash);
-   // sendPacket(peer, reinterpret_cast<uint8 *>(&info), sizeof(PlayerInfo), CHL_S2C);
-    
     sendPacket(peer, info, CHL_S2C);
     
-    HeroSpawn2 h2;
-    h2.header.netId = peerInfo(peer)->getChampion()->getNetId();
-    sendPacket(peer, reinterpret_cast<uint8 *>(&h2), sizeof(HeroSpawn2), CHL_S2C);
+    HeroSpawn2 h2(peerInfo(peer)->getChampion()->getNetId());
+    sendPacket(peer, h2, CHL_S2C);
+	
     notifySetHealth(peerInfo(peer)->getChampion());
     //Spawn Turrets
     vector<string> szTurrets = {
@@ -138,10 +133,8 @@ bool Game::handleSpawn(ENetPeer *peer, ENetPacket *packet) {
         "@Turret_T2_L_01_A"
     };
     for(unsigned int i = 0; i < 24; i++) {
-        TurretSpawn turretSpawn;
-        turretSpawn.tID = GetNewNetID();
-        strcpy((char *)turretSpawn.name, szTurrets[i].c_str());
-        sendPacket(peer, reinterpret_cast<uint8 *>(&turretSpawn), sizeof(TurretSpawn), CHL_S2C);
+        TurretSpawn turretSpawn(GetNewNetID(), szTurrets[i]);
+        sendPacket(peer, turretSpawn, CHL_S2C);
     }
     //Spawn Props
     LevelPropSpawn lpSpawn(GetNewNetID(), "LevelProp_Yonkey", "Yonkey", 12465, 14422.257f, 101);
@@ -154,80 +147,55 @@ bool Game::handleSpawn(ENetPeer *peer, ENetPacket *packet) {
     sendPacket(peer, lpSpawn4, CHL_S2C);
     
     StatePacket end(PKT_S2C_EndSpawn);
-    bool p3 = sendPacket(peer, reinterpret_cast<uint8 *>(&end), sizeof(StatePacket), CHL_S2C);
-    BuyItemAns recall;
-    recall.header.netId = peerInfo(peer)->getChampion()->getNetId();
-    recall.itemId = 2001;
-    recall.slotId = 7;
-    recall.stack = 1;
-    bool p4 = sendPacket(peer, reinterpret_cast<uint8 *>(&recall), sizeof(BuyItemAns), CHL_S2C); //activate recall slot
-    GameTimer timer(0); //0xC0
-    sendPacket(peer, reinterpret_cast<uint8 *>(&timer), sizeof(GameTimer), CHL_S2C);
-    GameTimer timer2(0.4); //0xC0
-    sendPacket(peer, reinterpret_cast<uint8 *>(&timer2), sizeof(GameTimer), CHL_S2C);
-    GameTimerUpdate timer3(0.4); //0xC1
-    sendPacket(peer, reinterpret_cast<uint8 *>(&timer3), sizeof(GameTimerUpdate), CHL_S2C);
-    //lvl 1 R for elise
+    bool p3 = sendPacket(peer, end, CHL_S2C);
+    BuyItemAns recall(peerInfo(peer)->getChampion()->getNetId(), 2001, 7, 1);
+    bool p4 = sendPacket(peer, recall, CHL_S2C); //activate recall slot
+    GameTimer timer(0);
+    sendPacket(peer, timer, CHL_S2C);
+    GameTimer timer2(0.4f);
+    sendPacket(peer, timer2, CHL_S2C);
+    GameTimerUpdate timer3(0.4f);
+    sendPacket(peer, timer3, CHL_S2C);
     for(int i = 0; i < 4; i++) {
         SpellSet spell(peerInfo(peer)->getChampion()->getNetId(), i, 1);
-        sendPacket(peer, reinterpret_cast<uint8 *>(&spell), sizeof(SpellSet), CHL_S2C);
+        sendPacket(peer, spell, CHL_S2C);
     }
     return p1 & p2 & p3;
 }
 
 bool Game::handleStartGame(HANDLE_ARGS) {
    StatePacket start(PKT_S2C_StartGame);
-   sendPacket(peer, reinterpret_cast<uint8 *>(&start), sizeof(StatePacket), CHL_S2C);
+   sendPacket(peer, start, CHL_S2C);
    
    _started = true;
    
-   FogUpdate2 test;
-   test.x = 0;
-   test.y = 0;
-   test.radius = 1;
-   test.unk1 = 2;
-   //uint8 p[] = {0xC5, 0x19, 0x00, 0x00, 0x40, 0x00, 0x00, 0x50};
-   //sendPacket(peer, reinterpret_cast<uint8*>(p), sizeof(p), 3);
-   //sendPacket(peer, reinterpret_cast<uint8 *>(&test), sizeof(FogUpdate2), 3);
-   //playing around 8-)
-
-   /*CharacterStats stats(FM1_Gold, 0, 0, 0, 0);
-   stats->netId = peerInfo(peer)->netId;
-   stats->setValue(1, FM1_Gold, gold);*/
-   //Logging->writeLine("Set gold to %f\n", gold);
-   //sendPacket(peer, reinterpret_cast<uint8 *>(stats), stats->getSize(), CHL_LOW_PRIORITY, 2);
-   //stats->destroy();
+   /*
+   FogUpdate2 test(peerInfo(peer)->getChampion()->getNetId(), 0, 0, 2);
+   sendPacket(peer, test, CHL_S2C);
+   TODO : Create class Turret (like Champion or Minion) to change Fog (and Masks)
+   */
    return true;
 }
 
 bool Game::handleAttentionPing(ENetPeer *peer, ENetPacket *packet) {
-    AttentionPing *ping = reinterpret_cast<AttentionPing *>(packet->data);
-    /*printf("Ping! x: %f, y: %f, z: %f, type: %i\n", ping->x, ping->y, ping->z, ping->type);
-	printf("cmd: %x\n", ping->cmd);
-	printf("unk1: %x\n", ping->unk1);
-	printf("x: %f\n", ping->x);
-	printf("y: %f\n", ping->y);
-	printf("z: %f\n", ping->z);
-	printf("type: %x\n", ping->type);*/
-    AttentionPingAns response(ping);
-	response.netId = peerInfo(peer)->getChampion()->getNetId();
-	//printPacket(reinterpret_cast<uint8 *>(&response), sizeof(response));
-	
-    return broadcastPacket(reinterpret_cast<uint8 *>(&response), sizeof(AttentionPingAns), CHL_S2C);
+   AttentionPing *ping = reinterpret_cast<AttentionPing *>(packet->data);
+   AttentionPingAns response(peerInfo(peer), ping);
+   return broadcastPacket(response, CHL_S2C);
 }
 
 bool Game::handleView(ENetPeer *peer, ENetPacket *packet) {
-    ViewReq *request = reinterpret_cast<ViewReq *>(packet->data);
-    ////Logging->writeLine("View (%i), x:%f, y:%f, zoom: %f\n", request->requestNo, request->x, request->y, request->zoom);
-    ViewAns answer;
-    answer.requestNo = request->requestNo;
-    sendPacket(peer, reinterpret_cast<uint8 *>(&answer), sizeof(ViewAns), CHL_S2C, UNRELIABLE);
-    enet_host_flush(peer->host);
-    if(request->requestNo == 0xFE) {
-        answer.requestNo = 0xFF;
-        sendPacket(peer, reinterpret_cast<uint8 *>(&answer), sizeof(ViewAns), CHL_S2C, UNRELIABLE);
-    }
-    return true;
+   ViewRequest *request = reinterpret_cast<ViewRequest *>(packet->data);
+   ViewAnswer answer(request);
+   if (request->requestNo == 0xFE)
+   {
+      answer.setRequestNo(0xFF);
+   }
+   else
+   {
+      answer.setRequestNo(request->requestNo);
+   }
+   sendPacket(peer, answer, CHL_S2C, UNRELIABLE);
+   return true;
 }
 
 inline void SetBitmaskValue(uint8 mask[], int pos, bool val) {
@@ -242,8 +210,6 @@ inline void SetBitmaskValue(uint8 mask[], int pos, bool val) {
 inline bool GetBitmaskValue(uint8 mask[], int pos) {
     return pos >= 0 && ((1 << (pos % 8)) & mask[pos / 8]) != 0;
 }
-
-#include <vector>
 
 std::vector<MovementVector> readWaypoints(uint8 *buffer, int coordCount) {
     unsigned int nPos = (coordCount + 5) / 8;
@@ -311,8 +277,8 @@ bool Game::handleLoadPing(ENetPeer *peer, ENetPacket *packet) {
 }
 
 bool Game::handleQueryStatus(HANDLE_ARGS) {
-    QueryStatus response;
-    return sendPacket(peer, reinterpret_cast<uint8 *>(&response), sizeof(QueryStatus), CHL_S2C);
+    QueryStatusAns response;
+    return sendPacket(peer, response, CHL_S2C);
 }
 
 bool Game::handleClick(HANDLE_ARGS) {
@@ -358,16 +324,16 @@ bool Game::handleChatBoxMessage(HANDLE_ARGS) {
             blockNo = 1 << (blockNo - 1);
             uint32 mask = 1 << (fieldNo - 1);
             CharacterStats stats(blockNo, peerInfo(peer)->getChampion()->getNetId(), mask, value);
-            sendPacket(peer, reinterpret_cast<uint8 *>(&stats), sizeof(stats), CHL_LOW_PRIORITY, 2);
+            sendPacket(peer, stats, CHL_LOW_PRIORITY, 2);
             return true;
         }
         // Set Gold
         if(strncmp(message->getMessage(), cmd[1], strlen(cmd[1])) == 0) {
             float gold = (float)atoi(&message->getMessage()[strlen(cmd[1]) + 1]);
             CharacterStats stats(MM_One, peerInfo(peer)->getChampion()->getNetId(), FM1_Gold, gold);
-            sendPacket(peer, reinterpret_cast<uint8 *>(&stats), sizeof(stats), CHL_LOW_PRIORITY, 2);
+            sendPacket(peer, stats, CHL_LOW_PRIORITY, 2);
             /*CharacterStats stats2(MM_One, peerInfo(peer)->netId, FM1_Gold_2, gold);
-            sendPacket(peer, reinterpret_cast<uint8 *>(&stats2), sizeof(stats), CHL_LOW_PRIORITY, 2);*/
+            sendPacket(peer, stats2, CHL_LOW_PRIORITY, 2);*/
             return true;
         }
        
@@ -463,8 +429,10 @@ bool Game::handleChatBoxMessage(HANDLE_ARGS) {
         //Model
         if(strncmp(message->getMessage(), cmd[8], strlen(cmd[8])) == 0) {
             std::string sModel = (char *)&message->getMessage()[strlen(cmd[8]) + 1];
-            UpdateModel modelPacket(peerInfo(peer)->getChampion()->getNetId(), (char *)sModel.c_str()); //96
-            broadcastPacket(reinterpret_cast<uint8 *>(&modelPacket), sizeof(UpdateModel), CHL_S2C);
+			int32 skinNo = (int32)atoi(&message->getMessage()[strlen(cmd[8]) + sModel.length()]);
+			sModel.erase(sModel.find_first_of(' '), sModel.length() - sModel.find_first_of(' '));
+            UpdateModel modelPacket(peerInfo(peer)->getChampion()->getNetId(), sModel, skinNo); //96
+            broadcastPacket(modelPacket, CHL_S2C);
             return true;
         }
     }
@@ -498,20 +466,17 @@ bool Game::handleSkillUp(HANDLE_ARGS) {
     sendPacket(peer, skillUpResponse, CHL_GAMEPLAY);
     
     CharacterStats stats(MM_One, peerInfo(peer)->getChampion()->getNetId(), FM1_SPELL, (unsigned short)(0x108F)); // activate all the spells
-    sendPacket(peer, reinterpret_cast<uint8 *>(&stats), sizeof(stats)-2, CHL_LOW_PRIORITY, 2);
+    sendPacket(peer, stats, CHL_LOW_PRIORITY, 2);
     
     return true;
 }
 
 bool Game::handleBuyItem(HANDLE_ARGS) {
+	// TODO : Add to player a system to check slot open or not (and stacks)
     static int slot = 0;
     BuyItemReq *request = reinterpret_cast<BuyItemReq *>(packet->data);
-    BuyItemAns response;
-    response.header.netId = request->header.netId;
-    response.itemId = request->id;
-    response.slotId = slot++; //check for trinket ID and addapt slot
-    response.stack = 1;
-    return broadcastPacket(reinterpret_cast<uint8 *>(&response), sizeof(response), CHL_S2C);
+    BuyItemAns response(peerInfo(peer)->getChampion()->getNetId(), request->id, slot++, 1);
+    return broadcastPacket(response, CHL_S2C);
 }
 
 bool Game::handleEmotion(HANDLE_ARGS) {
@@ -535,8 +500,6 @@ bool Game::handleEmotion(HANDLE_ARGS) {
             //Logging->writeLine("joke");
             break;
     }
-    EmotionResponse response;
-    response.header.netId = emotion->header.netId;
-    response.id = emotion->id;
-    return broadcastPacket(reinterpret_cast<uint8 *>(&response), sizeof(response), CHL_S2C);
+    EmotionResponse response(peerInfo(peer)->getChampion()->getNetId(), emotion->id);
+    return broadcastPacket(response, CHL_S2C);
 }
