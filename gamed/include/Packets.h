@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #pragma pack(push,1)
 #endif
 
+/* New Packet Architecture */
 class Packet {
 protected:
    Buffer buffer;
@@ -66,6 +67,7 @@ public:
 
 };
 
+/* Old Packet Architecture & Packets */
 
 struct PacketHeader {
     PacketHeader() {
@@ -85,70 +87,17 @@ struct GameHeader {
     uint32 netId;
     uint32 ticks;
 };
-typedef struct _SynchBlock {
-    _SynchBlock() {
-        userId = 0xFFFFFFFFFFFFFFFF;
-        netId = 0x1E;
-        teamId = 0x64;
-        unk2 = 0;
-        flag = 0; //1 for bot?
-        memset(data1, 0, 64);
-        memset(data2, 0, 64);
-        unk3 = 0x19;
-    }
 
-    uint64 userId;
-    uint16 netId;
-    uint32 skill1;
-    uint32 skill2;
-    uint8 flag;
-    uint32 teamId;
-    uint8 data1[64];
-    uint8 data2[64];
-    uint32 unk2;
-    uint32 unk3;
-} SynchBlock;
+// *********************************************
 
-struct ClientReady {
-    uint32 cmd;
-    uint32 playerId;
-    uint32 teamId;
-};
-
-typedef struct _SynchVersionAns {
-    _SynchVersionAns() {
-        header.cmd = PKT_S2C_SynchVersion;
-        ok = ok2 = 1;
-        memcpy(version, "Version 4.12.0.356 [PUBLIC]", 27);
-        memcpy(gameMode, "CLASSIC", 8);
-        memset(zero, 0, 2232);
-        end1 = 0xE2E0;
-        end2 = 0xA0;
-    }
-
-    PacketHeader header;
-    uint8 ok;
-    uint32 mapId;
-    SynchBlock players[12];
-    uint8 version[27];      //Ending zero so size 26+0x00
-    uint8 ok2;              //1
-    uint8 unknown[228];     //Really strange shit
-    uint8 gameMode[8];
-    uint8 zero[2232];
-    uint16 end1;            //0xE2E0
-    uint8 end2;             //0xA0 || 0x08
-} SynchVersionAns;
-
-typedef struct _PingLoadInfo {
+struct PingLoadInfo {
     PacketHeader header;
     uint32 unk1;
     uint64 userId;
     float loaded;
     float ping;
     float f3;
-} PingLoadInfo;
-
-uint8 *createDynamicPacket(uint8 *str, uint32 size);
+};
 
 typedef struct _LoadScreenInfo {
     _LoadScreenInfo() {
@@ -168,6 +117,471 @@ typedef struct _LoadScreenInfo {
     uint32 bluePlayerNo;
     uint32 redPlayerNo;
 } LoadScreenInfo;
+
+
+/*
+WIP
+class KeyCheck : public Packet {
+protected:
+	uint8 partialKey[3];   //Bytes 1 to 3 from the blowfish key for that client
+    uint64 userId;         //uint8 testVar[8];   //User id
+    uint64 checkId;        //uint8 checkVar[8];  //Encrypted testVar
+public:
+	KeyCheck(uint64 userId) : Packet(PKT_KeyCheck) {
+		buffer << (uint8)0 << (uint8)0 << (uint8)0; // partialKey
+		buffer << (uint32)0; // playerNo
+		buffer << (uint64)userId;
+		buffer << (uint32)0; // unk1
+		buffer << (uint64)checkId; // checkId
+		buffer << (uint32)0; // unk2
+	}
+};*/
+
+typedef struct _KeyCheck {
+    _KeyCheck() {
+        cmd = PKT_KeyCheck;
+        playerNo = 0;
+        checkId = 0;
+        trash = trash2 = 0;
+    }
+
+    uint8 cmd;
+    uint8 partialKey[3];   //Bytes 1 to 3 from the blowfish key for that client
+    uint32 playerNo;
+    uint64 userId;         //uint8 testVar[8];   //User id
+    uint32 trash;
+    uint64 checkId;        //uint8 checkVar[8];  //Encrypted testVar
+    uint32 trash2;
+} KeyCheck;
+
+struct CameraLock {
+    PacketHeader header;
+    uint8 isLock;
+    uint32 padding;
+};
+
+/*typedef struct _ViewReq {
+    uint8 cmd;
+    uint32 unk1;
+    float x;
+    float zoom;
+    float y;
+    float y2;		//Unk
+    uint32 width;	//Unk
+    uint32 height;	//Unk
+    uint32 unk2;	//Unk
+    uint8 requestNo;
+} ViewReq;*/
+
+/**
+ * Change Target ??
+ */
+struct Unk {
+   Unk(uint32 netId, float x, float y, uint32 targetNetId = 0) : unk1(0x0F), unk2(1), unk3(2), x(x), unk4(55), y(y), targetNetId(targetNetId) {
+      header.cmd = PKT_S2C_UNK;
+      header.netId = netId;
+   }
+
+   PacketHeader header;
+   uint8 unk1, unk2, unk3;
+
+   float x, unk4, y;
+   uint32 targetNetId;
+};
+
+struct MovementReq {
+    PacketHeader header;
+    MoveType type;
+    float x;
+    float y;
+    uint32 zero;
+    uint8 vectorNo;
+    uint32 netId;
+    uint8 moveData;
+};
+
+// Need to structure these functions somewhere
+struct MovementAns {
+    MovementAns() {
+        header.cmd = PKT_S2C_MoveAns;
+    }
+
+    GameHeader header;
+    uint16 nbUpdates;
+    uint8 vectorNo;
+    uint32 netId;
+    uint8 moveData; //bitMasks + Move Vectors
+
+    MovementVector *getVector(uint32 index) {
+        if(index >= (uint8)vectorNo / 2)
+        { return NULL; }
+        MovementVector *vPoints = (MovementVector *)(&moveData + maskCount());
+        return &vPoints[index];
+    }
+
+    int maskCount() {
+        float fVal = (float)vectorNo / 2;
+        return (int)std::ceil((fVal - 1) / 4);
+    }
+
+    static uint32 size(uint8 vectorNo) {
+        float fVectors = vectorNo;
+        int maskCount = (int)std::ceil((fVectors - 1) / 4);
+        return sizeof(MovementAns) + (vectorNo * sizeof(MovementVector)) + maskCount; //-1 since struct already has first moveData byte
+    }
+
+    uint32 size() {
+        return size(vectorNo / 2);
+    }
+
+    static MovementAns *create(uint32 vectorNo) {
+        int nSize = size(vectorNo / 2);
+        MovementAns *packet = (MovementAns *)new uint8[nSize];
+        memset(packet, 0, nSize);
+        packet->header.cmd = PKT_S2C_MoveAns;
+        packet->header.ticks = clock();
+        packet->vectorNo = vectorNo;
+        return packet;
+    }
+
+    static void destroy(MovementAns *packet) {
+        delete [](uint8 *)packet;
+    }
+
+};
+
+/*typedef struct _ViewAns {
+    _ViewAns() {
+        cmd = PKT_S2C_ViewAns;
+        unk1 = 0;
+    }
+
+    uint8 cmd;
+    uint32 unk1;
+    uint8 requestNo;
+} ViewAns;*/
+
+struct Unk2 {
+   Unk2(uint32 sourceNetId, uint32 targetNetId)  : targetNetId(targetNetId) {
+      header.cmd = PKT_S2C_Unk2;
+      header.netId = sourceNetId;
+   }
+
+   PacketHeader header;
+   uint32 targetNetId;
+};
+
+struct SynchVersion {
+    PacketHeader header;
+    uint32 unk1;
+    uint32 unk2;
+    uint8 version[50]; //Dunno how big and when usefull data begins
+};
+
+struct SynchBlock {
+    SynchBlock() {
+        userId = 0xFFFFFFFFFFFFFFFF;
+        netId = 0x1E;
+        teamId = 0x64;
+        unk2 = 0;
+        flag = 0; //1 for bot?
+        memset(data1, 0, 64);
+        memset(data2, 0, 64);
+        unk3 = 0x19;
+    }
+
+    uint64 userId;
+    uint16 netId;
+    uint32 skill1;
+    uint32 skill2;
+    uint8 flag;
+    uint32 teamId;
+    uint8 data1[64];
+    uint8 data2[64];
+    uint32 unk2; // UNRA  PLAT
+    uint32 unk3; // NKED  INUM
+};
+/*
+WIP
+class SynchVersionAns : public BasePacket {
+public:
+	SynchVersionAns(uint32 mapId, const std::string& server, const std::string& data1) : BasePacket(PKT_S2C_SynchVersion) {
+		buffer << (uint8)1; // ok
+		buffer << (uint32)mapId;
+		buffer << (SynchBlock)players[12]; // NEED TO FIX HERE DUNNO HOW
+		buffer.fill(0, 5-server.length());
+		buffer << (std::string&)"Version 4.12.0.356 [PUBLIC]";
+		// Todo : care must be 27 length !!!!! buffer.fill(0, LENGTH);
+		buffer << (uint8)1; // ok2
+		buffer.fill(0, 228); // unknown
+		buffer << (std::string&)"CLASSIC";
+		buffer.fill(0, 1); // because CLASSIC is 7-length, not 8
+		buffer.fill(0, 2232);
+		buffer << (uint16)0xE2E0;
+		buffer << (uint8)0xA0;
+	}
+};*/
+
+typedef struct _SynchVersionAns {
+    _SynchVersionAns() {
+        header.cmd = PKT_S2C_SynchVersion;
+        ok = ok2 = 1;
+        memcpy(version, "Version 4.12.0.356 [PUBLIC]", 27);
+        memcpy(gameMode, "CLASSIC", 8);
+        memset(zero, 0, 2232);
+		memset(unknown, 1, 228);
+        end1 = 0xE2E0;
+        end2 = 0xA0;
+    }
+
+    PacketHeader header;
+    uint8 ok;
+    uint32 mapId;
+    SynchBlock players[12];
+    uint8 version[27];      //Ending zero so size 26+0x00
+    uint8 ok2;              //1
+    uint8 unknown[228];     //Really strange shit
+    uint8 gameMode[8];
+    uint8 zero[2232];
+    uint16 end1;            //0xE2E0
+    uint8 end2;             //0xA0 || 0x08
+} SynchVersionAns;
+
+/* New Style Packets */
+
+struct ClientReady {
+    uint32 cmd;
+    uint32 playerId;
+    uint32 teamId;
+};
+
+class MinionSpawn : public BasePacket {
+public:
+	MinionSpawn(const Minion* m) : BasePacket(PKT_S2C_MinionSpawn, m->getNetId()) {
+		buffer << (uint32)0x00150017; // unk
+		buffer << (uint8)0x03; // unk2
+		buffer << (uint32)m->getNetId();
+		buffer << (uint32)m->getNetId();
+		buffer << (uint32)m->getPosition();
+		buffer << (uint8)0xff; // unk4
+		buffer << (uint8)1; // unk5_1
+		buffer << (uint8)m->getType(); // type
+		buffer << (uint8)0; // unk5_3
+		buffer << (uint8)1; // unk5_4
+		buffer << (uint32)0x0001000a << (uint32)0x00000000 << (uint32)0x00000000 << (uint32)0x00000000 << (uint32)0x00003f80 << (uint32)0x00000000 << (uint32)0x00000000 << (uint32)0x02000000 << (uint32)0x0000272c; // unk6
+		// TODO : was 37 length (not 36) : "\x0a\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\x3f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x2c\x27\x00\x00\x06"
+		buffer << (uint32)m->getNetId();
+		buffer << (uint8)5; // unk7
+		buffer << (uint64)0x0ff84540f546f424; // unk8
+	}
+};
+
+class QueryStatusAns : public BasePacket {
+public:
+	QueryStatusAns() : BasePacket(PKT_S2C_QueryStatusAns) {
+		buffer << (uint8)1; // ok
+	}
+};
+
+class WorldSendGameNumber : public BasePacket {
+public:
+	WorldSendGameNumber(uint64 gameId, const std::string& server, const std::string& data1) : BasePacket(PKT_World_SendGameNumber) {
+		buffer << (uint64)gameId;
+		buffer << server;
+		buffer.fill(0, 5-server.length());
+		buffer << data1;
+		buffer.fill(0, 27-data1.length());
+		buffer << (uint8)0x80; // data
+	}
+};
+
+class CharacterStats : public Packet {
+public:
+	CharacterStats(uint8 masterMask, uint32 netId, uint32 mask, float value) : Packet(PKT_S2C_CharStats) {
+		buffer << (uint32)0;
+		buffer << (uint32)clock();
+		buffer << (uint8)1; // updateNo
+		buffer << (uint8)masterMask;
+		buffer << (uint32)netId;
+		buffer << (uint32)mask;
+		buffer << (uint8)4; // size
+		buffer << (float)value;
+	}
+	
+	CharacterStats(uint8 masterMask, uint32 netId, uint32 mask, unsigned short value) : Packet(PKT_S2C_CharStats) {
+		buffer << (uint32)0;
+		buffer << (uint32)clock();
+		buffer << (uint8)1; // updateNo
+		buffer << (uint8)masterMask;
+		buffer << (uint32)netId;
+		buffer << (uint32)mask;
+		buffer << (uint8)2; // size
+		buffer << (unsigned short)value;
+	}
+};
+
+struct ChatMessage {
+    uint8 cmd;
+    uint32 netId;
+    uint32 unk1;
+    uint8 unk2;
+
+    uint32 playerNo;
+    ChatType type;
+    uint32 lenght;
+    uint8 unk3[32];
+    int8 msg;
+
+    int8 *getMessage() {
+        return &msg;
+    }
+};
+
+class UpdateModel : public BasePacket {
+public:
+	UpdateModel(uint32 netId, const std::string& szModel, int32 skinNo) : BasePacket(PKT_S2C_UpdateModel, netId) {
+		buffer << (int32)(netId & ~0x40000000); // id
+		buffer << (uint8)1; // bitField
+		buffer << (int32)skinNo;
+		buffer << szModel;
+		buffer.fill(0, 64-szModel.length());
+	}
+};
+
+class StatePacket : public BasePacket {
+public:
+	StatePacket(uint8 buffer) : BasePacket(buffer) {
+	}
+};
+
+class StatePacket2 : public BasePacket {
+public:
+	StatePacket2(uint8 buffer) : BasePacket(buffer) {
+		buffer << (uint16)0; // nUnk
+	}
+};
+
+class FogUpdate2 : public BasePacket {
+public:
+	FogUpdate2(uint32 netId, float x, float y, uint32 radius) : BasePacket(PKT_S2C_FogUpdate2, netId) {
+		buffer << (float)x;
+		buffer << (float)y;
+		buffer << (uint32)radius;
+		buffer << (uint8)2; // unk1
+	}
+};
+
+struct Click {
+   PacketHeader header;
+   uint32 zero;
+   uint32 targetNetId; // netId on which the player clicked
+};
+
+class HeroSpawn : public Packet {
+public:
+	HeroSpawn(uint32 netId, uint32 gameId, const std::string& name, const std::string& type, uint32 skinNo) : Packet(PKT_S2C_HeroSpawn) {
+		buffer << (uint32)0; // ???
+		buffer << (uint32)netId;
+		buffer << (uint32)gameId;
+		buffer << (uint8)0; // netNodeID ?
+		buffer << (uint8)1; // SkillLevel
+		buffer << (uint8)1; // teamIsOrder Blue=Order=1 Purple=Choas=0
+		buffer << (uint8)0; // isBot
+		buffer << (uint8)0; // botRank
+		buffer << (uint8)0; // spawnPosIndex ?
+		buffer << (uint32)skinNo;
+		buffer << name;
+		buffer.fill(0, 128-name.length());
+		buffer << type;
+		buffer.fill(0, 40-type.length());
+		buffer << (float)0.f; // deathDurationRemaining
+		buffer << (float)0.f; // timeSinceDeath
+		buffer << (uint8)0; // bitField
+	}
+};
+
+class HeroSpawn2 : public BasePacket {
+public:
+	HeroSpawn2(uint32 netId) : BasePacket(PKT_S2C_HeroSpawn2, netId) {
+		buffer.fill(0, 15);
+		buffer << (uint8)0x80;
+		buffer << (uint8)0x3F;
+		buffer.fill(0, 13);
+		buffer << (uint8)1; // unk1
+		buffer << (uint32)3; // unk2
+		buffer << (uint32)0x420F9C78; // f1
+		buffer << (uint32)0x4388C6A5; // f2
+		buffer << (uint32)0x3F441B7D; // f3
+		buffer << (uint32)0x3F248DBB; // f4
+	}
+};
+
+class TurretSpawn : public BasePacket {
+public:
+	TurretSpawn(uint32 tID, const std::string& name) : BasePacket(PKT_S2C_TurretSpawn) {
+		buffer << (uint32)tID;
+		buffer << name;
+		buffer.fill(0, 71-name.length());
+	}
+};
+
+class GameTimer : public BasePacket {
+public:
+	GameTimer(float fTime) : BasePacket(PKT_S2C_GameTimer) {
+		buffer << fTime;
+	}
+};
+
+class GameTimerUpdate : public BasePacket {
+public:
+	GameTimerUpdate(float fTime) : BasePacket(PKT_S2C_GameTimerUpdate) {
+		buffer << fTime;
+	}
+};
+
+class SpellSet : public BasePacket {
+public:
+	SpellSet(uint32 netID, uint32 spellID, uint32 level) : BasePacket(PKT_S2C_SpellSet, netID) {
+		buffer << (uint32)spellID;
+		buffer << (uint32)level;
+	}
+};
+
+struct Announce {
+    PacketHeader header;
+    uint8 msg;
+    uint64 unknown;
+    uint32 mapNo;
+};
+
+struct BuyItemReq {
+    PacketHeader header;
+    uint32 id;
+};
+
+class BuyItemAns : public BasePacket {
+public:
+	BuyItemAns(uint32 netId, uint16 itemId, uint8 slotId, uint8 stack) : BasePacket(PKT_S2C_BuyItemAns, netId) {
+		buffer << (uint16)itemId;
+		buffer << (uint16)0; // unk1
+		buffer << (uint8)slotId;
+		buffer << (uint8)stack;
+		buffer << (uint16)0; // unk2
+		buffer << (uint8)0; // unk3
+	}
+};
+
+struct EmotionPacket {
+    PacketHeader header;
+    uint8 id;
+};
+
+class EmotionResponse : public BasePacket {
+public:
+	EmotionResponse(uint32 netId, uint8 id) : BasePacket(PKT_S2C_Emotion, netId) {
+		buffer << (uint8)id;
+	}
+};
 
 class LoadScreenPlayerName : public Packet {
 public:
@@ -203,36 +617,10 @@ public:
     uint8* description;*/
 };
 
-class SetHealth : public BasePacket {
-public:
-   SetHealth(Unit* u) : BasePacket(PKT_S2C_SetHealth, u->getNetId()) {
-      buffer << (uint16)0x0000; // unk
-      buffer << u->getStats().getCurrentHealth();
-      buffer << u->getStats().getMaxHealth();
-   }
-};
-
-typedef struct _KeyCheck {
-    _KeyCheck() {
-        cmd = PKT_KeyCheck;
-        playerNo = 0;
-        checkId = 0;
-        trash = trash2 = 0;
+struct AttentionPing {
+    AttentionPing() {
     }
-
-    uint8 cmd;
-    uint8 partialKey[3];   //Bytes 1 to 3 from the blowfish key for that client
-    uint32 playerNo;
-    uint64 userId;         //uint8 testVar[8];   //User id
-    uint32 trash;
-    uint64 checkId;        //uint8 checkVar[8];  //Encrypted testVar
-    uint32 trash2;
-} KeyCheck;
-
-typedef struct _AttentionPing {
-    _AttentionPing() {
-    }
-    _AttentionPing(_AttentionPing *ping) {
+    AttentionPing(AttentionPing *ping) {
         cmd = ping->cmd;
         unk1 = ping->unk1;
         x = ping->x;
@@ -247,69 +635,63 @@ typedef struct _AttentionPing {
     float y;
     float z;
     uint8 type;
-} AttentionPing;
-
-typedef struct _AttentionPingAns {
-    _AttentionPingAns(AttentionPing *ping) {
-		cmd = PKT_S2C_AttentionPing;
-		unk1 = ping->unk1;
-		x = ping->x;
-		y = ping->y;
-		z = ping->z;
-		netId = 0;
-		switch (ping->type)
-		{
-			case 0: 
-				type = 0xb0;
-				break;
-			case 1:
-				type = 0xb1;
-				break;
-			case 2: // Danger ping
-				type = 0xb2;
-				break;
-			case 3: // Enemy missing ping
-				type = 0xb3;
-				break;
-			case 4: // On my way ping
-				type = 0xb4;
-				break;
-			case 5: // Fall back/retreat ping
-				type = 0xb5;
-				break;
-			case 6: // Needs assistance ping
-				type = 0xb6;
-				break;
-		}
-    }
-	//uint8 temp[22];
-    uint8 cmd;
-    uint32 unk1;
-    float x;
-    float y;
-    float z;
-    uint32 netId;
-    uint8 type;    
-} AttentionPingAns;
-
-struct CameraLock {
-    PacketHeader header;
-    uint8 isLock;
-    uint32 padding;
 };
 
-typedef struct _ViewReq {
-    uint8 cmd;
-    uint32 unk1;
-    float x;
-    float zoom;
-    float y;
-    float y2;		//Unk
-    uint32 width;	//Unk
-    uint32 height;	//Unk
-    uint32 unk2;	//Unk
-    uint8 requestNo;
-} ViewReq;
+class AttentionPingAns : public Packet {
+public:
+   AttentionPingAns(ClientInfo *player, AttentionPing *ping) : Packet(PKT_S2C_AttentionPing){
+      buffer << (uint32)0; //unk1
+      buffer << ping->x;
+      buffer << ping->y;
+      buffer << ping->z;
+      buffer << (uint32)player->getChampion()->getNetId();
+      switch (ping->type)
+      {
+         case 0:
+            buffer << (uint8)0xb0;
+            break;
+         case 1:
+            buffer << (uint8)0xb1;
+            break;
+         case 2:
+            buffer << (uint8)0xb2; // Danger
+            break;
+         case 3:
+            buffer << (uint8)0xb3; // Enemy Missing
+            break;
+         case 4:
+            buffer << (uint8)0xb4; // On My Way
+            break;
+         case 5:
+            buffer << (uint8)0xb5; // Retreat / Fall Back
+            break;
+         case 6:
+            buffer << (uint8)0xb6; // Assistance Needed
+            break;            
+      }
+   }
+};
+
+class SetHealth : public BasePacket {
+public:
+   SetHealth(Unit* u) : BasePacket(PKT_S2C_SetHealth, u->getNetId()) {
+      buffer << (uint16)0x0000; // unk
+      buffer << u->getStats().getCurrentHealth();
+      buffer << u->getStats().getMaxHealth();
+   }
+};
+
+struct SkillUpPacket {
+    PacketHeader header;
+    uint8 skill;
+};
+
+class SkillUpResponse : public BasePacket {
+public:
+    SkillUpResponse(uint32 netId, uint8 skill, uint8 level, uint8 pointsLeft) : BasePacket(PKT_S2C_SkillUp, netId) {
+        buffer << skill << level << pointsLeft;
+    }
+};
 
 struct CastSpell {
     PacketHeader header;
@@ -365,7 +747,6 @@ public:
 
 };
 
-
 class SpawnProjectile : public BasePacket {
 public:
    SpawnProjectile(uint32 projNetId, Unit* caster, float x, float y) : BasePacket(PKT_S2C_SpawnProjectile, projNetId) {
@@ -405,177 +786,6 @@ public:
 
 };
 
-/**
- * Change Target ??
- */
-struct Unk {
-   Unk(uint32 netId, float x, float y, uint32 targetNetId = 0) : unk1(0x0F), unk2(1), unk3(2), x(x), unk4(55), y(y), targetNetId(targetNetId) {
-      header.cmd = PKT_S2C_UNK;
-      header.netId = netId;
-   }
-
-   PacketHeader header;
-   uint8 unk1, unk2, unk3;
-
-   float x, unk4, y;
-   uint32 targetNetId;
-};
-
-struct MinionSpawn {
-   
-   MinionSpawn(const Minion* m) : netId(m->getNetId()), netId2(m->getNetId()), netId3(m->getNetId()), unk(0x00150017), unk2(0x03), position(m->getPosition()), unk4(0xff), unk5_1(1), type(m->getType()), unk5_3(0), unk5_4(1), unk7(5), unk8(0x0ff84540f546f424) {
-      header.cmd = PKT_S2C_MinionSpawn;
-      header.netId = m->getNetId();
-      memcpy(unk6, "\x0a\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\x3f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x2c\x27\x00\x00\x06", 36);
-   }
-
-   PacketHeader header;
-   
-   uint32 unk;
-   uint8 unk2;
-   uint32 netId, netId2;
-   uint32 position;
-   uint8 unk4;
-   uint8 unk5_1;
-   uint8 type;
-   uint8 unk5_3;
-   uint8 unk5_4;
-   uint8 unk6[36];
-   uint32 netId3;
-   uint8 unk7;
-   uint64 unk8;
-};
-
-struct MovementReq {
-    PacketHeader header;
-    MoveType type;
-    float x;
-    float y;
-    uint32 zero;
-    uint8 vectorNo;
-    uint32 netId;
-    uint8 moveData;
-};
-
-struct MovementAns {
-    MovementAns() {
-        header.cmd = PKT_S2C_MoveAns;
-    }
-
-    GameHeader header;
-    uint16 nbUpdates;
-    uint8 vectorNo;
-    uint32 netId;
-    uint8 moveData; //bitMasks + Move Vectors
-
-    MovementVector *getVector(uint32 index) {
-        if(index >= vectorNo / 2)
-        { return NULL; }
-        MovementVector *vPoints = (MovementVector *)(&moveData + maskCount());
-        return &vPoints[index];
-    }
-
-    int maskCount() {
-        float fVal = vectorNo / 2;
-        return std::ceil((fVal - 1) / 4);
-    }
-
-    static uint32 size(uint8 vectorNo) {
-        float fVectors = vectorNo;
-        int maskCount = std::ceil((fVectors - 1) / 4);
-        return sizeof(MovementAns) + (vectorNo * sizeof(MovementVector)) + maskCount; //-1 since struct already has first moveData byte
-    }
-
-    uint32 size() {
-        return size(vectorNo / 2);
-    }
-
-    static MovementAns *create(uint32 vectorNo) {
-        int nSize = size(vectorNo / 2);
-        MovementAns *packet = (MovementAns *)new uint8[nSize];
-        memset(packet, 0, nSize);
-        packet->header.cmd = PKT_S2C_MoveAns;
-        packet->header.ticks = clock();
-        packet->vectorNo = vectorNo;
-        return packet;
-    }
-
-    static void destroy(MovementAns *packet) {
-        delete [](uint8 *)packet;
-    }
-
-};
-
-typedef struct _ViewAns {
-    _ViewAns() {
-        cmd = PKT_S2C_ViewAns;
-        unk1 = 0;
-    }
-
-    uint8 cmd;
-    uint32 unk1;
-    uint8 requestNo;
-} ViewAns;
-
-
-typedef struct _QueryStatus {
-    _QueryStatus() {
-        header.cmd = PKT_S2C_QueryStatusAns;
-        ok = 1;
-    }
-    PacketHeader header;
-    uint8 ok;
-} QueryStatus;
-
-typedef struct _SynchVersion {
-    PacketHeader header;
-    uint32 unk1;
-    uint32 unk2;
-    uint8 version[50]; //Dunno how big and when usefull data begins
-} SynchVersion;
-
-typedef struct _WorldSendGameNumber {
-    _WorldSendGameNumber() {
-        header.cmd = PKT_World_SendGameNumber;
-        memset(data, 0, sizeof(data1));
-        memset(data, 0, sizeof(data));
-        gameId = 0;
-    }
-
-    PacketHeader header;
-    uint64 gameId; //_0x0000
-    uint8 server[5]; //0x0008
-    uint8 data1[27]; //0x000D
-    uint8 data[0x80];//0x0028
-} WorldSendGameNumber;
-
-
-struct CharacterStats {
-
-   CharacterStats(uint8 masterMask, uint32 netId, uint32 mask, float value) : updateNo(1), masterMask(masterMask), netId(netId), mask(mask), size(4) {
-      header.cmd = (GameCmd)PKT_S2C_CharStats;
-      header.ticks = clock();
-      this->value.fValue = value;
-   }
-   
-   CharacterStats(uint8 masterMask, uint32 netId, uint32 mask, unsigned short value) : updateNo(1), masterMask(masterMask), netId(netId), mask(mask), size(2) {
-      header.cmd = (GameCmd)PKT_S2C_CharStats;
-      header.ticks = clock();
-      this->value.sValue = value;
-   }
-
-   GameHeader header;
-   uint8 updateNo;
-   uint8 masterMask;
-   uint32 netId;
-   uint32 mask;
-   uint8 size;
-   union {
-      unsigned short sValue;
-      float fValue;
-   } value;
-};
-
 class UpdateStats : public GamePacket {
 public:
    UpdateStats(Unit* u) : GamePacket(PKT_S2C_CharStats, u->getNetId()) {
@@ -613,173 +823,6 @@ public:
    }
 };
 
-struct ChatMessage {
-    uint8 cmd;
-    uint32 netId;
-    uint32 unk1;
-    uint8 unk2;
-
-    uint32 playerNo;
-    ChatType type;
-    uint32 lenght;
-    uint8 unk3[32];
-    int8 msg;
-
-    int8 *getMessage() {
-        return &msg;
-    }
-};
-
-typedef struct _UpdateModel {
-    _UpdateModel(uint32 netID, const char *szModel) {
-        memset(this, 0, sizeof(_UpdateModel));
-        header.cmd = (PacketCmd)0x97;
-        header.netId = netID;
-        id = netID & ~0x40000000;
-        bOk = 1;
-        unk1 = -1;
-        strncpy((char *)szName, szModel, 32);
-    }
-    PacketHeader header;
-    uint32 id;
-    uint8 bOk;
-    uint32 unk1;
-    uint8 szName[32];
-} UpdateModel;
-typedef struct _StatePacket {
-    _StatePacket(PacketCmd state) {
-        header.cmd = state;
-    }
-    PacketHeader header;
-} StatePacket;
-typedef struct _StatePacket2 {
-    _StatePacket2(PacketCmd state) {
-        header.cmd = state;
-        nUnk = 0;
-    }
-    PacketHeader header;
-    int16 nUnk;
-} StatePacket2;
-
-struct FogUpdate2 {
-    FogUpdate2() {
-        header.cmd = PKT_S2C_FogUpdate2;
-        header.netId = 0x40000019;
-    }
-    PacketHeader header;
-    float x;
-    float y;
-    uint32 radius;
-    uint8 unk1;
-};
-
-struct Click {
-
-   PacketHeader header;
-   uint32 zero;
-   uint32 targetNetId; // netId on which the player clicked
-
-};
-
-struct Unk2 {
-   Unk2(uint32 sourceNetId, uint32 targetNetId)  : targetNetId(targetNetId) {
-      header.cmd = PKT_S2C_Unk2;
-      header.netId = sourceNetId;
-   }
-
-   PacketHeader header;
-   uint32 targetNetId;
-};
-
-class HeroSpawn : public Packet {
-public:
-	HeroSpawn(uint32 netId, uint32 gameId, const std::string& name, const std::string& type, uint32 skinNo) : Packet(PKT_S2C_HeroSpawn) {
-		buffer << (uint32)0; // ???
-		buffer << (uint32)netId;
-		buffer << (uint32)gameId;
-		buffer << (uint8)0; // netNodeID ?
-		buffer << (uint8)1; // SkillLevel
-		buffer << (uint8)1; // teamIsOrder Blue=Order=1 Purple=Choas=0
-		buffer << (uint8)0; // isBot
-		buffer << (uint8)0; // botRank
-		buffer << (uint8)0; // spawnPosIndex ?
-		buffer << (uint32)skinNo;
-		buffer << name;
-		buffer.fill(0, 128-name.length());
-		buffer << type;
-		buffer.fill(0, 40-type.length());
-		buffer << (float)0.f; // deathDurationRemaining
-		buffer << (float)0.f; // timeSinceDeath
-		buffer << (uint8)0; // bitField
-	}
-};
-
-struct HeroSpawn2 {
-    HeroSpawn2() {
-        header.cmd = (PacketCmd)PKT_S2C_HeroSpawn2;
-        memset(unk, 0, 30);
-        unk[15] = 0x80;
-        unk[16] = 0x3F;
-        unk1 = 3;
-        unk2 = 1;
-        f1 = 0x420F9C78;
-        f2 = 0x4388C6A5;
-        f3 = 0x3F441B7D;
-        f4 = 0x3F248DBB;
-    }
-
-    PacketHeader header;
-    uint8 unk[30];
-    uint8 unk1;
-    uint32 unk2;
-    uint32 f1;
-    uint32 f2;
-    uint32 f3;
-    uint32 f4;
-};
-
-struct TurretSpawn {
-    TurretSpawn() {
-        header.cmd = PKT_S2C_TurretSpawn;
-        tID = 0;
-        memset(&name, 0, 29 + 42); //Set name + type to zero
-    }
-
-    PacketHeader header;
-    uint32 tID;
-    uint8 name[28];
-    uint8 type[42];
-};
-struct GameTimer {
-    GameTimer(float fTime) {
-        header.cmd = PKT_S2C_GameTimer;
-        header.netId = 0;
-        this->fTime = fTime;
-    }
-    PacketHeader header;
-    float fTime;
-};
-struct GameTimerUpdate {
-    GameTimerUpdate(float fTime) {
-        header.cmd = PKT_S2C_GameTimerUpdate;
-        header.netId = 0;
-        this->fTime = fTime;
-    }
-    PacketHeader header;
-    float fTime;
-};
-struct SpellSet {
-    SpellSet(uint32 netID, uint32 _spellID, uint32 _level) {
-        memset(this, 0, sizeof(SpellSet));
-        header.cmd = PacketCmd(0x5A);
-        header.netId = netID;
-        spellID = _spellID;
-        level = _level;
-    }
-    PacketHeader header;
-    uint32 spellID;
-    uint32 level;
-};
 class LevelPropSpawn : public BasePacket {
     public:
         LevelPropSpawn(uint32 netId, const std::string& name, const std::string& type, float x, float y, float z) : BasePacket(PKT_S2C_LevelPropSpawn) {
@@ -806,58 +849,30 @@ class LevelPropSpawn : public BasePacket {
         uint8 type[64];*/
 };
 
-struct Announce {
-    PacketHeader header;
-    uint8 msg;
-    uint64 unknown;
-    uint32 mapNo;
+struct ViewRequest {
+    uint8 cmd;
+    uint32 unk1;
+    float x;
+    float zoom;
+    float y;
+    float y2;		//Unk
+    uint32 width;	//Unk
+    uint32 height;	//Unk
+    uint32 unk2;	//Unk
+    uint8 requestNo;
 };
 
-typedef struct _SkillUpPacket {
-    PacketHeader header;
-    uint8 skill;
-} SkillUpPacket;
-
-class SkillUpResponse : public BasePacket {
+class ViewAnswer : public Packet {
 public:
-    SkillUpResponse(uint32 netId, uint8 skill, uint8 level, uint8 pointsLeft) : BasePacket(PKT_S2C_SkillUp, netId) {
-        buffer << skill << level << pointsLeft;
-    }
+   ViewAnswer(ViewRequest *request) : Packet(PKT_S2C_ViewAns) {
+      buffer << request->unk1;
+   }
+   void setRequestNo(uint8 requestNo){
+      buffer << requestNo;
+   }
 };
+/* End New Packets */
 
-typedef struct _BuyItemReq {
-    PacketHeader header;
-    uint32 id;
-} BuyItemReq;
-
-typedef struct _BuyItemAns {
-    _BuyItemAns() {
-        header.cmd = (PacketCmd)PKT_S2C_BuyItemAns;
-        unk1 = 0;
-        unk2 = 0;
-        unk3 = 0;
-    }
-    PacketHeader header;
-    uint16 itemId;
-    uint16 unk1;
-    uint8 slotId;
-    uint8 stack;
-    uint16 unk2;
-    uint8 unk3;
-} BuyItemAns;
-
-typedef struct _EmotionPacket {
-    PacketHeader header;
-    uint8 id;
-} EmotionPacket;
-
-typedef struct _EmotionResponse {
-    _EmotionResponse() {
-        header.cmd = PKT_S2C_Emotion;
-    }
-    PacketHeader header;
-    uint8 id;
-} EmotionResponse;
 #if defined( __GNUC__ )
 #pragma pack()
 #else
