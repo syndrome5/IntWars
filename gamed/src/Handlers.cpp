@@ -193,8 +193,6 @@ inline bool GetBitmaskValue(uint8 mask[], int pos) {
     return pos >= 0 && ((1 << (pos % 8)) & mask[pos / 8]) != 0;
 }
 
-#include <vector>
-
 std::vector<MovementVector> readWaypoints(uint8 *buffer, int coordCount) {
     unsigned int nPos = (coordCount + 5) / 8;
     if(coordCount % 2)
